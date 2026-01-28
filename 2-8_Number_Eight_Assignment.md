@@ -28,7 +28,7 @@ print(16/2)
 ```
 
 ## Code Screenshot
-![Name_case](<Screenshot 2026-01-28 143405-1.png>)
+![Number_Eight](Number_Eight.png)
 
 ## Description
 
