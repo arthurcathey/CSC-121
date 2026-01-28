@@ -1,7 +1,7 @@
 2-4. Name Cases Assignment
 
 2-4. Name Cases
-![Name_case](<Screenshot 2026-01-28 143405-1.png>)
+![Name_case](<Name_case>)
 
 ```python
 # Variable representing a person's name in different cases
