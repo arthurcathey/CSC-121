@@ -37,10 +37,8 @@ This Python program demonstrates four basic arithmetic operations, each producin
 1. **Addition (5+3)**: Adds 5 and 3 to get 8
 2. **Subtraction (15-7)**: Subtracts 7 from 15 to get 8
 3. **Multiplication (2*4)**: Multiplies 2 by 4 to get 8
-4. **Division (16/2)**: Divides 16 by 2 to get 8.0 (note: division in Python 3 returns a float)
-
-Each operation is preceded by a comment explaining what calculation is being performed.
+4. **Division (16/2)**: Divides 16 by 2 to get 8.0
 
 ## GitHub Repository
-✅ File uploaded to: https://github.com/arthurcathey/WEB-121/blob/main/number_eight.py
+File uploaded to: https://github.com/arthurcathey/WEB-121/blob/main/number_eight.py
 
