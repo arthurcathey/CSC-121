@@ -6,9 +6,15 @@ guest_list = [
 ]
 
 # Print an invitation message to each guest
-print(f"Dear {guest_list[0]}, I would be honored to have you join me for dinner.")
-print(f"Dear {guest_list[1]}, please join me for a special dinner gathering.")
-print(f"Dear {guest_list[2]}, it would be amazing to have you at dinner.")
+print(
+    f"Dear {guest_list[0]}, I would be honored to have you join me for dinner."
+)
+print(
+    f"Dear {guest_list[1]}, please join me for a special dinner gathering."
+)
+print(
+    f"Dear {guest_list[2]}, it would be amazing to have you at dinner."
+)
 
 # Original guest list
 guest_list = [

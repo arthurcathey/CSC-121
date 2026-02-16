@@ -6,9 +6,18 @@ guest_list = [
 ]
 
 # Print an invitation message to each guest
-print(f"Dear {guest_list[0]}, I would be honored to have you join me for dinner.")
-print(f"Dear {guest_list[1]}, please join me for a special dinner gathering.")
-print(f"Dear {guest_list[2]}, it would be amazing to have you at dinner.")
+print(
+    f"Dear {guest_list[0]}, I would be honored to have you "
+    "join me for dinner."
+)
+print(
+    f"Dear {guest_list[1]}, please join me for a special "
+    "dinner gathering."
+)
+print(
+    f"Dear {guest_list[2]}, it would be amazing to have "
+    "you at dinner."
+)
 
 # Original guest list
 guest_list = [
@@ -18,7 +27,10 @@ guest_list = [
 ]
 
 # Inform guests about the bigger dinner table
-print("Good news! I found a bigger dinner table, so I can invite more guests.\n")
+print(
+    "Good news! I found a bigger dinner table, so I can "
+    "invite more guests.\n"
+)
 
 # Add new guests
 guest_list.insert(0, "Elvis Presley")
