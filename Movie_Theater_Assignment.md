@@ -49,7 +49,8 @@ Total cost: $25
 ```
 
 ## Code and Output Screenshot
-![movie_theater](movie_theater.png)
+![ticket_code](ticket_code.png)
+![ticket_output](ticket_output.png)
 
 ## Description
 
