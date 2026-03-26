@@ -44,6 +44,9 @@ else:
     print(f"Winning ticket: Numbers {winning_numbers}, Letter {winning_letter}")
 ```
 
+## Code Screenshot
+![Lottery Code](lottery_code.png)
+
 ## Program Output
 ```
 ==================================================
@@ -57,6 +60,9 @@ Sorry, you didn't win this time. Better luck next time!
 Your ticket: Numbers [3, 5, 7, 9], Letter B
 Winning ticket: Numbers [1, 4, 6, 8], Letter D
 ```
+
+## Output Screenshot
+![Lottery Output](lottery_output.png)
 
 ## Description
 
