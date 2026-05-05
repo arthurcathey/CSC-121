@@ -1,0 +1,1446 @@
+"""
+Alien Invasion: A 2D space shooter game.
+
+This module contains the main AlienInvasion class that manages the entire game.
+It handles initialization, the main game loop, event processing, screen updates,
+and game state management.
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+import pygame
+import sys
+import random
+from pygame.sprite import Group
+
+from settings import Settings
+from game_stats import GameStats
+from button import Button
+from ship import Ship
+from high_scores import HighScores
+import game_functions as gf
+
+
+class AlienInvasion:
+    """
+    Overall class to manage game assets and behavior.
+    
+    This class serves as the main controller for the entire game. It initializes
+    all game components (ship, aliens, bullets), manages the game loop, processes
+    user input, and handles rendering.
+    
+    Attributes:
+        screen (pygame.Surface): The main game window
+        settings (Settings): Game configuration and difficulty settings
+        stats (GameStats): Current game statistics (score, level, lives)
+        high_scores (HighScores): High score management system
+        ship (Ship): Player's controllable spaceship
+        bullets (pygame.sprite.Group): Group of active bullets
+        aliens (pygame.sprite.Group): Group of active aliens
+        particles (pygame.sprite.Group): Group of particle effects
+    """
+
+    def __init__(self):
+        """Initialize the game and create game resources."""
+        # Initialize pygame
+        pygame.init()
+        self.clock = pygame.time.Clock()
+        self.settings = Settings()
+
+        # Create the game window with title
+        self.screen = pygame.display.set_mode(
+            (self.settings.screen_width, self.settings.screen_height))
+        pygame.display.set_caption("Alien Invasion")
+
+        # Create game statistics tracker and high score system
+        self.stats = GameStats(self)
+        self.high_scores = HighScores()
+        
+        # Create UI elements (play button)
+        self.sb = Button(self, "Play Game")
+
+        # Create sprite groups for game objects
+        self.ship = Ship(self)
+        self.bullets = Group()
+        self.aliens = Group()
+        self.particles = Group()
+
+        # Screen shake variables for impact feedback
+        self.screen_shake_intensity = 0
+        self.screen_shake_duration = 0
+        self.show_game_over = False
+
+        # Create the initial fleet of aliens
+        gf.create_fleet(self)
+
+    def run_game(self):
+        """
+        Start the main game loop.
+        
+        This is the core of the game. It runs continuously at 60 FPS and:
+        1. Checks for user input
+        2. Updates game state (if playing)
+        3. Renders everything to screen
+        4. Maintains consistent frame rate
+        """
+        while True:
+            # Handle all user input
+            self._check_events()
+
+            # Update game state if game is active
+            if self.stats.game_active:
+                self.ship.update()
+                gf.update_bullets(self)
+                gf.update_aliens(self)
+            
+            # Update particle effects
+            self.particles.update()
+            for particle in self.particles.sprites():
+                if not particle.is_alive():
+                    self.particles.remove(particle)
+            
+            # Update screen shake effect
+            if self.screen_shake_duration > 0:
+                self.screen_shake_duration -= 1
+
+            # Render game to screen
+            self._update_screen()
+            
+            # Maintain 60 frames per second
+            self.clock.tick(60)
+
+    def _check_events(self):
+        """Respond to keypresses and mouse events."""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                # User closed the window - exit game
+                sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                self._check_keydown_events(event)
+            elif event.type == pygame.KEYUP:
+                self._check_keyup_events(event)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                # Detect mouse clicks on buttons
+                mouse_x, mouse_y = event.pos
+                self._check_play_button(mouse_x, mouse_y)
+
+    def _check_keydown_events(self, event):
+        """
+        Respond to key presses.
+        
+        Handles:
+        - Arrow keys for ship movement
+        - Space bar for firing bullets
+        - Q key to quit
+        """
+        if event.key == pygame.K_RIGHT:
+            self.ship.moving_right = True
+        elif event.key == pygame.K_LEFT:
+            self.ship.moving_left = True
+        elif event.key == pygame.K_SPACE:
+            gf.fire_bullet(self)
+        elif event.key == pygame.K_q:
+            sys.exit()
+
+    def _check_keyup_events(self, event):
+        """Respond to key releases to stop ship movement."""
+        if event.key == pygame.K_RIGHT:
+            self.ship.moving_right = False
+        elif event.key == pygame.K_LEFT:
+            self.ship.moving_left = False
+
+    def _check_play_button(self, mouse_x, mouse_y):
+        """
+        Start a new game when the player clicks the Play button.
+        
+        Also saves the score if the game was over and this is a retry.
+        """
+        button_clicked = self.sb.rect.collidepoint(mouse_x, mouse_y)
+        if button_clicked and not self.stats.game_active:
+            # Save score to high score list if game was over
+            if self.show_game_over:
+                self.high_scores.add_score(self.stats.score)
+                self.show_game_over = False
+            # Reset game state and start new game
+            gf.reset_game(self)
+
+    def _update_screen(self):
+        """
+        Update images on screen and flip to the new screen.
+        
+        This handles rendering all game objects, applying screen shake effects,
+        and displaying UI elements.
+        """
+        self.screen.fill(self.settings.bg_color)
+        
+        # Calculate screen shake offset for impact effects
+        shake_x = 0
+        shake_y = 0
+        if self.screen_shake_duration > 0:
+            shake_x = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
+            shake_y = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
+        
+        # Create temporary surface for applying shake effect
+        temp_surface = pygame.Surface((self.settings.screen_width, self.settings.screen_height))
+        temp_surface.fill(self.settings.bg_color)
+        
+        # Draw all game objects to temporary surface
+        self.ship.screen = temp_surface
+        self.ship.blitme()
+        self.ship.screen = self.screen
+
+        for bullet in self.bullets.sprites():
+            bullet.screen = temp_surface
+            bullet.draw_bullet()
+            bullet.screen = self.screen
+
+        for alien in self.aliens.sprites():
+            alien.screen = temp_surface
+            alien.blitme()
+            alien.screen = self.screen
+        
+        # Draw particle effects
+        for particle in self.particles.sprites():
+            temp_surface.blit(particle.image, particle.rect)
+
+        # Apply shake effect by blitting with offset
+        self.screen.blit(temp_surface, (shake_x, shake_y))
+
+        # Draw HUD (heads-up display) with score, level, lives
+        self._draw_stats()
+
+        # Draw UI elements
+        if not self.stats.game_active:
+            if self.show_game_over:
+                self._draw_game_over()
+            else:
+                self.sb.draw_button()
+
+        # Update the display with all rendered elements
+        pygame.display.flip()
+
+    def _draw_game_over(self):
+        """
+        Draw game over screen with statistics and high scores.
+        
+        Displays:
+        - "GAME OVER" text in red
+        - Final score
+        - Level reached
+        - Current high score
+        - "NEW HIGH SCORE" notification if applicable
+        - Play button to restart
+        """
+        # Semi-transparent dark overlay
+        overlay = pygame.Surface((self.settings.screen_width, self.settings.screen_height))
+        overlay.set_alpha(200)
+        overlay.fill((50, 50, 50))
+        self.screen.blit(overlay, (0, 0))
+        
+        # "GAME OVER" text in large red font
+        font_large = pygame.font.SysFont(None, 72)
+        game_over_text = font_large.render("GAME OVER", True, (255, 0, 0))
+        game_over_rect = game_over_text.get_rect()
+        game_over_rect.center = (self.settings.screen_width // 2, 100)
+        self.screen.blit(game_over_text, game_over_rect)
+        
+        # Display final stats
+        font_med = pygame.font.SysFont(None, 48)
+        score_text = font_med.render(f"Final Score: {self.stats.score}", True, (255, 255, 255))
+        level_text = font_med.render(f"Level Reached: {self.stats.level}", True, (255, 255, 255))
+        
+        score_rect = score_text.get_rect()
+        score_rect.center = (self.settings.screen_width // 2, 250)
+        self.screen.blit(score_text, score_rect)
+        
+        level_rect = level_text.get_rect()
+        level_rect.center = (self.settings.screen_width // 2, 320)
+        self.screen.blit(level_text, level_rect)
+        
+        # Display high score
+        high_score = self.high_scores.get_high_score()
+        high_score_text = font_med.render(f"High Score: {high_score}", True, (255, 215, 0))
+        high_score_rect = high_score_text.get_rect()
+        high_score_rect.center = (self.settings.screen_width // 2, 390)
+        self.screen.blit(high_score_text, high_score_rect)
+        
+        # Highlight if this is a new personal best
+        if self.high_scores.is_high_score(self.stats.score):
+            new_high_text = font_med.render("*** NEW HIGH SCORE ***", True, (0, 255, 0))
+            new_high_rect = new_high_text.get_rect()
+            new_high_rect.center = (self.settings.screen_width // 2, 460)
+            self.screen.blit(new_high_text, new_high_rect)
+        
+        # Show Play button to restart
+        self.sb.draw_button()
+
+    def _draw_stats(self):
+        """Draw score, level, and ships left on screen during gameplay."""
+        font = pygame.font.SysFont(None, 36)
+        
+        # Display current score
+        score_text = font.render(f"Score: {self.stats.score}", True, (0, 0, 0))
+        self.screen.blit(score_text, (10, 10))
+        
+        # Display current level
+        level_text = font.render(f"Level: {self.stats.level}", True, (0, 0, 0))
+        self.screen.blit(level_text, (10, 50))
+        
+        # Display remaining ships/lives
+        ships_text = font.render(f"Ships: {self.stats.ships_left}", True, (0, 0, 0))
+        self.screen.blit(ships_text, (10, 90))
+
+
+# Main execution
+if __name__ == '__main__':
+    ai = AlienInvasion()
+    ai.run_game()
+
+    def run_game(self):
+        """Start the main game loop."""
+        while True:
+            self._check_events()
+
+            if self.stats.game_active:
+                self.ship.update()
+                gf.update_bullets(self)
+                gf.update_aliens(self)
+            
+            # Update particles
+            self.particles.update()
+            for particle in self.particles.sprites():
+                if not particle.is_alive():
+                    self.particles.remove(particle)
+            
+            # Update screen shake
+            if self.screen_shake_duration > 0:
+                self.screen_shake_duration -= 1
+
+            self._update_screen()
+            self.clock.tick(60)  # 60 FPS
+
+    def _check_events(self):
+        """Respond to keypresses and mouse events."""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                self._check_keydown_events(event)
+            elif event.type == pygame.KEYUP:
+                self._check_keyup_events(event)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_x, mouse_y = event.pos
+                self._check_play_button(mouse_x, mouse_y)
+
+    def _check_keydown_events(self, event):
+        """Respond to keypresses."""
+        if event.key == pygame.K_RIGHT:
+            self.ship.moving_right = True
+        elif event.key == pygame.K_LEFT:
+            self.ship.moving_left = True
+        elif event.key == pygame.K_SPACE:
+            gf.fire_bullet(self)
+        elif event.key == pygame.K_q:
+            sys.exit()
+
+    def _check_keyup_events(self, event):
+        """Respond to key releases."""
+        if event.key == pygame.K_RIGHT:
+            self.ship.moving_right = False
+        elif event.key == pygame.K_LEFT:
+            self.ship.moving_left = False
+
+    def _check_play_button(self, mouse_x, mouse_y):
+        """Start a new game when the player clicks Play."""
+        button_clicked = self.sb.rect.collidepoint(mouse_x, mouse_y)
+        if button_clicked and not self.stats.game_active:
+            # Save score if game was over
+            if self.show_game_over:
+                self.high_scores.add_score(self.stats.score)
+                self.show_game_over = False
+            gf.reset_game(self)
+
+    def _update_screen(self):
+        """Update images on screen and flip to the new screen."""
+        self.screen.fill(self.settings.bg_color)
+        
+        # Apply screen shake offset
+        shake_x = 0
+        shake_y = 0
+        if self.screen_shake_duration > 0:
+            import random
+            shake_x = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
+            shake_y = random.randint(-self.screen_shake_intensity, self.screen_shake_intensity)
+        
+        # Create a temporary surface for shake offset
+        temp_surface = pygame.Surface((self.settings.screen_width, self.settings.screen_height))
+        temp_surface.fill(self.settings.bg_color)
+        
+        # Draw game objects to temp surface
+        self.ship.screen = temp_surface
+        self.ship.blitme()
+        self.ship.screen = self.screen
+
+        for bullet in self.bullets.sprites():
+            bullet.screen = temp_surface
+            bullet.draw_bullet()
+            bullet.screen = self.screen
+
+        for alien in self.aliens.sprites():
+            alien.screen = temp_surface
+            alien.blitme()
+            alien.screen = self.screen
+        
+        # Draw particles
+        for particle in self.particles.sprites():
+            temp_surface.blit(particle.image, particle.rect)
+
+        # Blit temp surface to main screen with shake offset
+        self.screen.blit(temp_surface, (shake_x, shake_y))
+
+        # Draw the score and level info
+        self._draw_stats()
+
+        # Draw the play button if the game is inactive
+        if not self.stats.game_active:
+            if self.show_game_over:
+                self._draw_game_over()
+            else:
+                self.sb.draw_button()
+
+        pygame.display.flip()
+
+    def _draw_game_over(self):
+        """Draw game over screen with stats."""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((self.settings.screen_width, self.settings.screen_height))
+        overlay.set_alpha(200)
+        overlay.fill((50, 50, 50))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Game over text
+        font_large = pygame.font.SysFont(None, 72)
+        game_over_text = font_large.render("GAME OVER", True, (255, 0, 0))
+        game_over_rect = game_over_text.get_rect()
+        game_over_rect.center = (self.settings.screen_width // 2, 100)
+        self.screen.blit(game_over_text, game_over_rect)
+        
+        # Stats
+        font_med = pygame.font.SysFont(None, 48)
+        score_text = font_med.render(f"Final Score: {self.stats.score}", True, (255, 255, 255))
+        level_text = font_med.render(f"Level Reached: {self.stats.level}", True, (255, 255, 255))
+        
+        score_rect = score_text.get_rect()
+        score_rect.center = (self.settings.screen_width // 2, 250)
+        self.screen.blit(score_text, score_rect)
+        
+        level_rect = level_text.get_rect()
+        level_rect.center = (self.settings.screen_width // 2, 320)
+        self.screen.blit(level_text, level_rect)
+        
+        # High score
+        high_score = self.high_scores.get_high_score()
+        high_score_text = font_med.render(f"High Score: {high_score}", True, (255, 215, 0))
+        high_score_rect = high_score_text.get_rect()
+        high_score_rect.center = (self.settings.screen_width // 2, 390)
+        self.screen.blit(high_score_text, high_score_rect)
+        
+        # Check if new high score
+        if self.high_scores.is_high_score(self.stats.score):
+            new_high_text = font_med.render("*** NEW HIGH SCORE ***", True, (0, 255, 0))
+            new_high_rect = new_high_text.get_rect()
+            new_high_rect.center = (self.settings.screen_width // 2, 460)
+            self.screen.blit(new_high_text, new_high_rect)
+        
+        # Play again button
+        self.sb.draw_button()
+
+    def _draw_stats(self):
+        """Draw score, level, and ships left on screen."""
+        font = pygame.font.SysFont(None, 36)
+        score_text = font.render(f"Score: {self.stats.score}", True, (0, 0, 0))
+        level_text = font.render(f"Level: {self.stats.level}", True, (0, 0, 0))
+        ships_text = font.render(f"Ships: {self.stats.ships_left}", True, (0, 0, 0))
+
+        self.screen.blit(score_text, (10, 10))
+        self.screen.blit(level_text, (10, 50))
+        self.screen.blit(ships_text, (10, 90))
+
+
+if __name__ == '__main__':
+    ai = AlienInvasion()
+    ai.run_game()
+"""
+Game settings and constants for Alien Invasion.
+
+This module contains the Settings class which stores all configurable game
+parameters like screen dimensions, speeds, colors, and difficulty scaling.
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+
+class Settings:
+    """
+    Store all settings for Alien Invasion.
+    
+    This class centralizes all game configuration so adjustments can be made
+    easily without modifying game logic. It also handles difficulty progression.
+    """
+
+    def __init__(self):
+        """Initialize the game settings."""
+        # Screen settings
+        self.screen_width = 1200
+        self.screen_height = 800
+        self.bg_color = (230, 230, 230)  # Light gray background
+
+        # Ship settings
+        self.ship_speed = 5  # Pixels per frame
+        self.ship_limit = 3  # Number of ships (lives) before game over
+
+        # Bullet settings
+        self.bullet_speed = 7  # Pixels per frame (upward)
+        self.bullet_width = 3
+        self.bullet_height = 15
+        self.bullet_color = (60, 60, 60)  # Dark gray
+        self.bullets_allowed = 3  # Maximum bullets on screen at once
+
+        # Alien settings
+        self.alien_speed = 1  # Pixels per frame (horizontal)
+        self.fleet_drop_speed = 10  # Pixels dropped when hitting screen edge
+        self.fleet_direction = 1  # 1 for right, -1 for left
+
+        # Difficulty settings - used to scale game speed each level
+        self.speedup_scale = 1.1  # 10% increase per level
+        self.score_scale = 1.5  # Score multiplier (unused in current version)
+
+    def increase_difficulty(self):
+        """
+        Increase game difficulty with each new fleet.
+        
+        This is called whenever the player clears all aliens and moves to the
+        next level. It increases the speed of aliens, bullets, and fleet drops
+        to make the game progressively harder.
+        """
+        self.alien_speed *= self.speedup_scale
+        self.fleet_drop_speed *= self.speedup_scale
+        self.bullet_speed *= self.speedup_scale
+"""
+Player ship for Alien Invasion game.
+
+This module contains the Ship class which represents the player's controllable
+spacecraft. The ship can move left and right and fire bullets.
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+import pygame
+
+
+class Ship:
+    """
+    Manage the player's ship.
+    
+    The ship is controlled by the player using arrow keys and can fire bullets
+    with the spacebar. It stays within the screen boundaries and updates position
+    based on movement flags set by keyboard input.
+    """
+
+    def __init__(self, ai_game):
+        """Initialize the ship and set its starting position."""
+        self.screen = ai_game.screen
+        self.settings = ai_game.settings
+        self.screen_rect = ai_game.screen.get_rect()
+
+        # Load and scale the ship image (green triangle with details)
+        self.image = pygame.image.load('ship.bmp')
+        self.image = pygame.transform.scale(self.image, (50, 60))
+        self.rect = self.image.get_rect()
+
+        # Start each new ship at the bottom center of the screen
+        self.rect.midbottom = self.screen_rect.midbottom
+
+        # Store a decimal x value for smooth fractional pixel movement
+        # Using decimals instead of integers allows smooth animation
+        self.x = float(self.rect.x)
+
+        # Movement flags - set by keyboard input, used to update position
+        self.moving_right = False
+        self.moving_left = False
+
+    def update(self):
+        """
+        Update the ship's position based on movement flags.
+        
+        Movement uses decimal positioning for smooth animation. The ship cannot
+        move beyond the left or right screen edges.
+        """
+        # Update the ship's x value, not the rect
+        if self.moving_right and self.rect.right < self.screen_rect.right:
+            self.x += self.settings.ship_speed
+        if self.moving_left and self.rect.left > 0:
+            self.x -= self.settings.ship_speed
+
+        # Update rect object from self.x
+        self.rect.x = self.x
+
+    def blitme(self):
+        """Draw the ship at its current location."""
+        self.screen.blit(self.image, self.rect)
+
+    def center_ship(self):
+        """Center the ship on the screen. Called after losing a life."""
+        self.rect.midbottom = self.screen_rect.midbottom
+        self.x = float(self.rect.x)
+"""
+Bullet class for Alien Invasion game.
+
+This module contains the Bullet class representing projectiles fired by the player.
+Bullets move upward and are removed when they leave the screen.
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+import pygame
+from pygame.sprite import Sprite
+
+
+class Bullet(Sprite):
+    """
+    Manage bullets fired from the ship.
+    
+    Bullets are projectiles that move upward from the ship's position.
+    They are automatically removed when they move off the top of the screen.
+    The game limits bullets on screen to 3 at a time to balance difficulty.
+    """
+
+    def __init__(self, ai_game):
+        """Create a bullet object at the ship's current position (top center)."""
+        super().__init__()
+        self.screen = ai_game.screen
+        self.settings = ai_game.settings
+
+        # Create a bullet rect at (0, 0) and then set correct position
+        self.rect = pygame.Rect(0, 0, self.settings.bullet_width,
+                                self.settings.bullet_height)
+        self.rect.midtop = ai_game.ship.rect.midtop
+
+        # Store the bullet's position as a decimal value
+        self.y = float(self.rect.y)
+
+    def update(self):
+        """
+        Move the bullet up the screen.
+        
+        Bullets use decimal positioning for smooth animation at high speeds.
+        """
+        # Update the decimal position of the bullet
+        self.y -= self.settings.bullet_speed
+        # Update the rect position
+        self.rect.y = self.y
+
+    def draw_bullet(self):
+        """Draw the bullet to the screen as a small dark rectangle."""
+        pygame.draw.rect(self.screen, self.settings.bullet_color, self.rect)
+"""
+Alien class with variety types for Alien Invasion.
+
+This module contains the Alien class representing enemy spacecraft.
+Three different alien types exist with different speeds, health, and point values.
+
+Alien Types:
+- Scout: Fast, 1 hit to kill, 50 points
+- Normal: Standard speed, 1 hit to kill, 100 points
+- Tank: Slow, 3 hits to kill, 300 points
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+import pygame
+from pygame.sprite import Sprite
+import random
+
+
+class Alien(Sprite):
+    """
+    A class to represent a single alien in the fleet.
+    
+    Aliens move horizontally and drop down when hitting screen edges.
+    Three different types provide variety in gameplay and scoring.
+    """
+
+    # Class variable defining three alien types with different properties
+    # Each type has: speed multiplier, health (hit points), color, and points
+    TYPES = {
+        'scout': {'speed_mult': 1.5, 'health': 1, 'color': (100, 200, 100), 'points': 50},
+        'normal': {'speed_mult': 1.0, 'health': 1, 'color': (150, 220, 100), 'points': 100},
+        'tank': {'speed_mult': 0.6, 'health': 3, 'color': (200, 100, 100), 'points': 300},
+    }
+
+    def __init__(self, ai_game, alien_type=None):
+        """
+        Initialize the alien and set its starting position.
+        
+        If no type is specified, randomly selects one weighted toward 'normal'.
+        """
+        super().__init__()
+        self.screen = ai_game.screen
+        self.settings = ai_game.settings
+
+        # Choose alien type (weighted towards normal)
+        if alien_type is None:
+            rand = random.random()
+            if rand < 0.6:
+                alien_type = 'normal'
+            elif rand < 0.8:
+                alien_type = 'scout'
+            else:
+                alien_type = 'tank'
+        
+        self.type = alien_type
+        self.type_data = self.TYPES[alien_type]
+        self.health = self.type_data['health']
+        self.max_health = self.type_data['health']
+        self.points = self.type_data['points']
+        self.color = self.type_data['color']
+
+        # Create alien based on type
+        self._create_image()
+        self.rect = self.image.get_rect()
+
+        # Start each new alien near the top left of the screen
+        self.rect.x = self.rect.width
+        self.rect.y = self.rect.height
+
+        # Store the alien's exact horizontal position
+        self.x = float(self.rect.x)
+
+    def _create_image(self):
+        """Create alien image based on type."""
+        if self.type == 'scout':
+            # Small, thin alien
+            size = (35, 25)
+        elif self.type == 'tank':
+            # Large, bulky alien
+            size = (55, 45)
+        else:  # normal
+            # Medium alien
+            size = (45, 35)
+
+        self.image = pygame.Surface(size, pygame.SRCALPHA)
+        self.base_image = self.image.copy()
+
+        # Draw based on type
+        if self.type == 'scout':
+            self._draw_scout()
+        elif self.type == 'tank':
+            self._draw_tank()
+        else:  # normal
+            self._draw_normal()
+
+    def _draw_normal(self):
+        """Draw normal alien."""
+        size = self.image.get_size()
+        mid_x, mid_y = size[0] // 2, size[1] // 2
+        
+        # Body
+        pygame.draw.ellipse(self.image, self.color, (6, 8, 23, 14))
+        # Head
+        pygame.draw.circle(self.image, self.color, (mid_x, 6), 5)
+        # Eyes
+        pygame.draw.circle(self.image, (255, 255, 255), (mid_x - 4, 4), 3)
+        pygame.draw.circle(self.image, (255, 255, 255), (mid_x + 4, 4), 3)
+        pygame.draw.circle(self.image, (0, 0, 0), (mid_x - 4, 4), 1)
+        pygame.draw.circle(self.image, (0, 0, 0), (mid_x + 4, 4), 1)
+
+    def _draw_scout(self):
+        """Draw fast scout alien."""
+        size = self.image.get_size()
+        mid_x, mid_y = size[0] // 2, size[1] // 2
+        
+        # Thin pointed body
+        pygame.draw.polygon(self.image, self.color, [(mid_x, 2), (3, 20), (size[0]-3, 20)])
+        # Large eyes
+        pygame.draw.circle(self.image, (255, 255, 255), (mid_x - 3, 8), 2)
+        pygame.draw.circle(self.image, (255, 255, 255), (mid_x + 3, 8), 2)
+
+    def _draw_tank(self):
+        """Draw strong tank alien."""
+        size = self.image.get_size()
+        
+        # Large body
+        pygame.draw.ellipse(self.image, self.color, (8, 12, 39, 26))
+        # Head
+        pygame.draw.circle(self.image, self.color, (27, 8), 8)
+        # Big threatening eyes
+        pygame.draw.circle(self.image, (255, 100, 100), (21, 5), 4)
+        pygame.draw.circle(self.image, (255, 100, 100), (33, 5), 4)
+        pygame.draw.circle(self.image, (0, 0, 0), (21, 5), 2)
+        pygame.draw.circle(self.image, (0, 0, 0), (33, 5), 2)
+
+    def take_damage(self):
+        """
+        Reduce health when hit by a bullet.
+        
+        Returns:
+            True if alien is destroyed (health <= 0), False otherwise.
+        """
+        self.health -= 1
+        return self.health <= 0
+
+    def update(self):
+        """Move the alien right or left."""
+        speed_mult = self.type_data['speed_mult']
+        self.x += self.settings.alien_speed * self.settings.fleet_direction * speed_mult
+        self.rect.x = self.x
+
+    def check_edges(self):
+        """Return True if alien is at edge of screen."""
+        screen_rect = self.screen.get_rect()
+        if self.rect.right >= screen_rect.right or self.rect.left <= 0:
+            return True
+        return False
+
+    def blitme(self):
+        """Draw the alien at its current location."""
+        self.screen.blit(self.image, self.rect)
+"""
+Game functions for Alien Invasion.
+
+This module contains all the core game logic functions including:
+- Event handling (keyboard input)
+- Bullet management and collision detection
+- Alien fleet management and movement
+- Collision detection and game state updates
+- Game reset functionality
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+import pygame
+from bullet import Bullet
+from alien import Alien
+from particle import Particle
+
+
+# ============================================================================
+# INPUT HANDLING
+# ============================================================================
+
+def check_keydown_events(event, ai_game):
+    """
+    Respond to key presses.
+    
+    Maps keyboard input to game actions:
+    - RIGHT ARROW: Move ship right
+    - LEFT ARROW: Move ship left
+    - SPACE: Fire bullet
+    - Q: Quit game
+    """
+    if event.key == pygame.K_RIGHT:
+        ai_game.ship.moving_right = True
+    elif event.key == pygame.K_LEFT:
+        ai_game.ship.moving_left = True
+    elif event.key == pygame.K_SPACE:
+        fire_bullet(ai_game)
+    elif event.key == pygame.K_q:
+        exit()
+
+
+def check_keyup_events(event, ai_game):
+    """
+    Respond to key releases.
+    
+    Stops ship movement when arrow keys are released.
+    """
+    if event.key == pygame.K_RIGHT:
+        ai_game.ship.moving_right = False
+    elif event.key == pygame.K_LEFT:
+        ai_game.ship.moving_left = False
+
+
+def fire_bullet(ai_game):
+    """
+    Fire a bullet if the limit hasn't been reached yet.
+    
+    The game limits bullets on screen to 3 at a time to balance difficulty.
+    Creates a new Bullet sprite and adds it to the bullets group.
+    """
+    if len(ai_game.bullets) < ai_game.settings.bullets_allowed:
+        new_bullet = Bullet(ai_game)
+        ai_game.bullets.add(new_bullet)
+
+
+# ============================================================================
+# BULLET MANAGEMENT
+# ============================================================================
+
+def update_bullets(ai_game):
+    """
+    Update position of bullets and remove off-screen bullets.
+    
+    This function:
+    1. Updates all bullet positions (moving them upward)
+    2. Removes bullets that have left the top of the screen
+    3. Checks for collisions between bullets and aliens
+    """
+    # Update all bullet positions
+    ai_game.bullets.update()
+
+    # Remove bullets that have gone off the screen
+    for bullet in ai_game.bullets.copy():
+        if bullet.rect.bottom <= 0:  # Top of screen is y=0
+            ai_game.bullets.remove(bullet)
+
+    # Check for any collisions between bullets and aliens
+    check_bullet_alien_collisions(ai_game)
+
+
+def check_bullet_alien_collisions(ai_game):
+    """
+    Respond to bullet-alien collisions.
+    
+    This function:
+    1. Detects which bullets and aliens have collided
+    2. Reduces alien health (supports 3-hit tanks)
+    3. Creates particle explosions when aliens die
+    4. Updates score based on alien type
+    5. Checks if the fleet is completely destroyed
+    
+    Collision handling is more complex now due to multi-hit enemies (tanks).
+    """
+    # Check for collisions without auto-removing (need to handle health)
+    collisions = pygame.sprite.groupcollide(
+        ai_game.bullets, ai_game.aliens, False, False
+    )
+
+    if collisions:
+        # Process each collision
+        for bullet, aliens in collisions.items():
+            # Remove the bullet (can only hit once)
+            if bullet in ai_game.bullets:
+                ai_game.bullets.remove(bullet)
+            
+            # Process each alien hit by this bullet
+            for alien in aliens:
+                # take_damage() returns True if alien is destroyed
+                if alien.take_damage():
+                    # Create 8 particles for explosion effect
+                    for _ in range(8):
+                        particle = Particle(
+                            alien.rect.centerx, 
+                            alien.rect.centery, 
+                            alien.color
+                        )
+                        ai_game.particles.add(particle)
+                    
+                    # Award points based on alien type
+                    ai_game.stats.score += alien.points
+                    ai_game.aliens.remove(alien)
+        
+        # Check if fleet is completely destroyed
+        check_fleet_empty(ai_game)
+
+
+# ============================================================================
+# FLEET MANAGEMENT
+# ============================================================================
+
+def check_fleet_empty(ai_game):
+    """
+    Check if the fleet is empty and create a new one if so.
+    
+    When the player destroys all aliens:
+    1. Clears remaining bullets
+    2. Increases game difficulty
+    3. Creates a new alien fleet
+    4. Increments level counter
+    5. Prints difficulty progression to console
+    """
+    if not ai_game.aliens:
+        # Remove all remaining bullets
+        ai_game.bullets.empty()
+        
+        # Increase game difficulty (speeds up aliens, bullets, fleet drop)
+        ai_game.settings.increase_difficulty()
+        
+        # Create new fleet of aliens
+        create_fleet(ai_game)
+        
+        # Increment level
+        ai_game.stats.level += 1
+        
+        # Display difficulty progression to console
+        print(f"\n*** LEVEL {ai_game.stats.level} ***")
+        print(f"Alien Speed: {ai_game.settings.alien_speed:.2f}")
+        print(f"Bullet Speed: {ai_game.settings.bullet_speed:.2f}")
+        print(f"Fleet Drop Speed: {ai_game.settings.fleet_drop_speed:.2f}\n")
+
+
+def create_fleet(ai_game):
+    """
+    Create a fleet of aliens arranged in rows and columns.
+    
+    This function:
+    1. Creates a temporary alien to determine sizing
+    2. Calculates how many aliens fit horizontally
+    3. Calculates how many rows fit vertically
+    4. Creates aliens in a grid pattern
+    5. Limits to max 6 per row and 3 rows for balanced gameplay
+    
+    The fleet features random alien types:
+    - 60% normal aliens
+    - 20% scout aliens (fast, less points)
+    - 20% tank aliens (slow, more points, 3 hits)
+    """
+    # Create a temporary alien to get its dimensions
+    alien = Alien(ai_game)
+    alien_width, alien_height = alien.rect.size
+    
+    # Calculate how many aliens fit horizontally
+    available_space_x = ai_game.settings.screen_width - (2 * alien_width)
+    number_aliens_x = available_space_x // (2 * alien_width)
+    
+    # Limit to maximum 6 aliens per row for balanced gameplay
+    number_aliens_x = min(number_aliens_x, 6)
+
+    # Calculate how many rows fit vertically
+    ship_height = ai_game.ship.rect.height
+    available_space_y = (
+        ai_game.settings.screen_height 
+        - (3 * alien_height)
+        - ship_height
+    )
+    number_rows = available_space_y // (2 * alien_height)
+    
+    # Limit to maximum 3 rows for balanced gameplay
+    number_rows = min(number_rows, 3)
+
+    # Create the fleet in a grid pattern
+    for row_number in range(number_rows):
+        for alien_number in range(number_aliens_x):
+            create_alien(ai_game, alien_number, row_number)
+
+
+def create_alien(ai_game, alien_number, row_number):
+    """
+    Create a single alien and place it in the fleet.
+    
+    Calculates the position for a single alien based on its row and column
+    in the grid, then adds it to the aliens group.
+    
+    Args:
+        ai_game: The main game object
+        alien_number: Column position in the fleet
+        row_number: Row position in the fleet
+    """
+    # Create new alien with random type
+    alien = Alien(ai_game)
+    alien_width, alien_height = alien.rect.size
+    
+    # Calculate x position (horizontal spacing)
+    alien.x = alien_width + 2 * alien_width * alien_number
+    alien.rect.x = alien.x
+    
+    # Calculate y position (vertical spacing)
+    alien.rect.y = alien_height + 2 * alien_height * row_number
+    
+    # Add alien to fleet
+    ai_game.aliens.add(alien)
+
+
+# ============================================================================
+# ALIEN MOVEMENT & COLLISION
+# ============================================================================
+
+def update_aliens(ai_game):
+    """
+    Update the positions of all aliens in the fleet.
+    
+    This function:
+    1. Checks if any aliens hit screen edges (triggers direction change)
+    2. Updates all alien positions
+    3. Checks for alien-ship collisions
+    4. Checks if any aliens reached the bottom (player loses life)
+    """
+    # Check if fleet needs to change direction
+    check_fleet_edges(ai_game)
+    
+    # Move all aliens
+    ai_game.aliens.update()
+
+    # Check if any aliens collided with the ship
+    if pygame.sprite.spritecollideany(ai_game.ship, ai_game.aliens):
+        ship_hit(ai_game)
+
+    # Check if any aliens reached the bottom of the screen
+    check_aliens_bottom(ai_game)
+
+
+def check_fleet_edges(ai_game):
+    """
+    Check if any aliens have reached screen edges.
+    
+    If any alien touches the left or right edge, the entire fleet
+    changes direction and drops down.
+    """
+    for alien in ai_game.aliens.sprites():
+        if alien.check_edges():
+            # Found an alien at the edge - change fleet direction
+            change_fleet_direction(ai_game)
+            break  # Only need to change once
+
+
+def change_fleet_direction(ai_game):
+    """
+    Drop the entire fleet down and reverse their direction.
+    
+    Called when any alien reaches screen edge. Makes all aliens:
+    1. Drop down by fleet_drop_speed pixels
+    2. Reverse horizontal direction (right becomes left, etc.)
+    """
+    for alien in ai_game.aliens.sprites():
+        # Drop all aliens down
+        alien.rect.y += ai_game.settings.fleet_drop_speed
+    
+    # Reverse fleet direction (1 becomes -1, -1 becomes 1)
+    ai_game.settings.fleet_direction *= -1
+
+
+# ============================================================================
+# COLLISION & GAME OVER
+# ============================================================================
+
+def ship_hit(ai_game):
+    """
+    Respond to the ship being hit by an alien.
+    
+    This happens when:
+    1. An alien touches the player's ship
+    2. An alien reaches the bottom of the screen
+    
+    If lives remain:
+    - Lose one life
+    - Create screen shake effect
+    - Clear bullets and aliens
+    - Create new fleet
+    - Center the ship
+    - Pause briefly for player feedback
+    
+    If no lives remain:
+    - End the game
+    - Show game over screen
+    """
+    if ai_game.stats.ships_left > 0:
+        # Still have lives left
+        ai_game.stats.ships_left -= 1
+        
+        # Create screen shake for impact feedback
+        ai_game.screen_shake_intensity = 10
+        ai_game.screen_shake_duration = 10
+
+        # Clear the screen
+        ai_game.aliens.empty()
+        ai_game.bullets.empty()
+
+        # Recreate fleet and reset ship position
+        create_fleet(ai_game)
+        ai_game.ship.center_ship()
+
+        # Pause to let player see they were hit
+        pygame.time.wait(500)
+    else:
+        # No lives left - game over
+        ai_game.stats.game_active = False
+        ai_game.show_game_over = True
+
+
+def check_aliens_bottom(ai_game):
+    """
+    Check if any aliens have reached the bottom of the screen.
+    
+    If any alien reaches the bottom, it counts as hitting the player
+    (same as touching the ship) and the player loses a life.
+    """
+    screen_rect = ai_game.screen.get_rect()
+    for alien in ai_game.aliens.sprites():
+        if alien.rect.bottom >= screen_rect.bottom:
+            # Alien reached bottom - treat as ship hit
+            ship_hit(ai_game)
+            break  # Only process one hit per frame
+
+
+# ============================================================================
+# GAME STATE
+# ============================================================================
+
+def reset_game(ai_game):
+    """
+    Reset the game for a new game session.
+    
+    Clears all game state and recreates the initial conditions:
+    1. Resets game settings to default (removes difficulty multipliers)
+    2. Resets statistics (score, level, lives)
+    3. Clears all sprites (aliens, bullets, particles)
+    4. Clears visual effects (screen shake)
+    5. Creates new alien fleet
+    6. Centers the ship
+    7. Sets game to active state
+    """
+    # Reset settings to default (removes difficulty scaling)
+    ai_game.settings = type(ai_game.settings)()
+    
+    # Reset statistics (score=0, level=1, ships=3)
+    ai_game.stats.reset_stats()
+    
+    # Clear all sprite groups
+    ai_game.aliens.empty()
+    ai_game.bullets.empty()
+    ai_game.particles.empty()
+    
+    # Clear visual effects
+    ai_game.screen_shake_intensity = 0
+    ai_game.screen_shake_duration = 0
+    
+    # Create fresh fleet of aliens
+    create_fleet(ai_game)
+    
+    # Reset ship to center
+    ai_game.ship.center_ship()
+    
+    # Set game to active (start playing)
+    ai_game.stats.game_active = True
+"""
+Game statistics tracking for Alien Invasion.
+
+This module contains the GameStats class which tracks all persistent game
+statistics like score, level, lives, and active/inactive state.
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+
+class GameStats:
+    """
+    Track statistics for Alien Invasion.
+    
+    Maintains game state and statistics that persist across multiple game
+    sessions or can be reset for new games.
+    """
+
+    def __init__(self, ai_game):
+        """Initialize statistics."""
+        self.settings = ai_game.settings
+        self.reset_stats()
+
+        # Start Alien Invasion in an active state
+        self.game_active = False
+
+    def reset_stats(self):
+        """Initialize statistics that can change during the game."""
+        self.ships_left = self.settings.ship_limit
+        self.score = 0
+        self.level = 1
+"""
+Button class for Alien Invasion game.
+
+This module contains the Button class for UI elements. Currently used for
+the Play button but can be extended for other buttons.
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+import pygame.font
+
+
+class Button:
+    """
+    A clickable button for UI interaction.
+    
+    Currently used as the "Play Game" button on the main menu and game over screen.
+    The button displays text and is detectable for mouse clicks.
+    """
+
+    def __init__(self, ai_game, msg):
+        """Initialize button attributes."""
+        self.screen = ai_game.screen
+        self.screen_rect = self.screen.get_rect()
+
+        # Set the dimensions and properties of the button
+        self.width, self.height = 200, 50
+        self.button_color = (0, 255, 0)
+        self.text_color = (255, 255, 255)
+        self.font = pygame.font.SysFont(None, 48)
+
+        # Build the button rect object and center it
+        self.rect = pygame.Rect(0, 0, self.width, self.height)
+        self.rect.center = self.screen_rect.center
+
+        # The button message only needs to be prepped once
+        self.prep_msg(msg)
+
+    def prep_msg(self, msg):
+        """Turn msg into a rendered image and center text on the button."""
+        self.msg_image = self.font.render(msg, True, self.text_color,
+                                          self.button_color)
+        self.msg_image_rect = self.msg_image.get_rect()
+        self.msg_image_rect.center = self.rect.center
+
+    def draw_button(self):
+        """Draw blank button and then draw message."""
+        self.screen.fill(self.button_color, self.rect)
+        self.screen.blit(self.msg_image, self.msg_image_rect)
+"""
+High score management for Alien Invasion.
+
+This module contains the HighScores class which handles persistent storage
+of the top 5 scores to a file.
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+import os
+
+
+class HighScores:
+    """
+    Manage high scores persistence.
+    
+    Loads and saves the top 5 scores to a file so they persist between
+    game sessions. Provides methods to check if a new score is high enough
+    to be added to the list.
+    """
+
+    def __init__(self):
+        """Initialize high scores."""
+        self.score_file = 'highscores.txt'
+        self.scores = self.load_scores()
+
+    def load_scores(self):
+        """Load high scores from file."""
+        scores = []
+        if os.path.exists(self.score_file):
+            try:
+                with open(self.score_file, 'r') as f:
+                    for line in f:
+                        try:
+                            score = int(line.strip())
+                            scores.append(score)
+                        except ValueError:
+                            pass
+            except IOError:
+                pass
+        
+        # Sort scores in descending order and keep top 5
+        scores.sort(reverse=True)
+        return scores[:5]
+
+    def add_score(self, score):
+        """Add a new score and save if it's in top 5."""
+        self.scores.append(score)
+        self.scores.sort(reverse=True)
+        self.scores = self.scores[:5]
+        self.save_scores()
+        return self.is_high_score(score)
+
+    def is_high_score(self, score):
+        """Check if score is in top 5."""
+        if len(self.scores) < 5:
+            return True
+        return score > self.scores[-1]
+
+    def save_scores(self):
+        """Save scores to file."""
+        try:
+            with open(self.score_file, 'w') as f:
+                for score in self.scores:
+                    f.write(f"{score}\n")
+        except IOError:
+            pass
+
+    def get_high_score(self):
+        """Get the highest score."""
+        return self.scores[0] if self.scores else 0
+
+    def get_all_scores(self):
+        """Get all top 5 scores."""
+        return self.scores
+"""
+Particle effects for Alien Invasion.
+
+This module contains the Particle class for creating visual explosion effects
+when aliens are destroyed. Particles fade out and fall with simulated gravity.
+
+Author: Arthur (CSC-121 Final Project)
+Date: May 2026
+"""
+
+import pygame
+import random
+from pygame.sprite import Sprite
+
+
+class Particle(Sprite):
+    """
+    A particle for explosion effects.
+    
+    Particles are small colored circles that burst outward when an alien dies.
+    They simulate gravity and fade out over time for a satisfying visual effect.
+    """
+
+    def __init__(self, x, y, color=None):
+        """Initialize a particle at the given position with optional color."""
+        super().__init__()
+        
+        # Random color if not specified (yellow/orange/red tones)
+        if color is None:
+            color = random.choice([
+                (255, 200, 0),    # Yellow
+                (255, 150, 0),    # Orange
+                (255, 100, 0),    # Dark Orange
+                (255, 255, 100),  # Light Yellow
+            ])
+        
+        # Create particle as small circle
+        self.size = random.randint(3, 8)
+        self.image = pygame.Surface((self.size * 2, self.size * 2), pygame.SRCALPHA)
+        pygame.draw.circle(self.image, color, (self.size, self.size), self.size)
+        
+        self.rect = self.image.get_rect()
+        self.rect.center = (x, y)
+        
+        # Velocity - random direction
+        angle = random.uniform(0, 2 * 3.14159)
+        speed = random.uniform(2, 6)
+        self.vx = speed * (angle * 0.5)
+        self.vy = speed * (angle * 0.5) - 3  # Bias upward
+        
+        # Lifetime
+        self.lifetime = random.randint(20, 40)
+        self.age = 0
+
+    def update(self):
+        """Update particle position and fade."""
+        self.rect.x += self.vx
+        self.rect.y += self.vy
+        self.vy += 0.1  # Gravity
+        
+        self.age += 1
+        
+        # Fade out
+        alpha = int(255 * (1 - self.age / self.lifetime))
+        self.image.set_alpha(alpha)
+
+    def is_alive(self):
+        """Return True if particle hasn't exceeded its lifetime yet."""
+        return self.age < self.lifetime
